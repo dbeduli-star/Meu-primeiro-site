@@ -1,7 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
-const Database = require("better-sqlite3");
+const { Pool } = require("pg");
 
 const app = express();
 app.use(cors());
@@ -15,56 +15,71 @@ app.get("/", (req, res) => {
     res.sendFile(path.join(__dirname, "index.html"));
 });
 
-// Conecta ao banco de dados SQLite (cria o arquivo visitas.db sozinho)
-const db = new Database("visitas.db");
+// Conecta ao banco de dados PostgreSQL na nuvem usando a variável DATABASE_URL
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: {
+        rejectUnauthorized: false
+    }
+});
 
-// Cria a tabela no banco usando linguagem SQL
-db.exec(`
+// Cria a tabela no PostgreSQL se ela ainda não existir
+pool.query(`
     CREATE TABLE IF NOT EXISTS visitas (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         nome TEXT NOT NULL,
         data TEXT NOT NULL
     )
-`);
+`).catch(err => console.error("Erro ao criar tabela:", err));
 
-// Rota GET: Busca todos os registros no banco SQL
-app.get("/visitas", (req, res) => {
-    const lista = db.prepare("SELECT * FROM visitas ORDER BY id DESC").all();
-    res.json(lista);
+// Rota GET: Busca todos os registros no banco PostgreSQL
+app.get("/visitas", async (req, res) => {
+    try {
+        const resultado = await pool.query("SELECT * FROM visitas ORDER BY id DESC");
+        res.json(resultado.rows);
+    } catch (err) {
+        res.status(500).json({ erro: "Erro ao buscar visitas" });
+    }
 });
 
-// Rota POST: Insere um novo visitante no banco SQL
-app.post("/visita", (req, res) => {
-    const { nome } = req.body;
-    const dataAtual = new Date().toLocaleString("pt-BR");
+// Rota POST: Insere um novo visitante no banco PostgreSQL
+app.post("/visita", async (req, res) => {
+    try {
+        const { nome } = req.body;
+        const dataAtual = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
 
-    const inserir = db.prepare("INSERT INTO visitas (nome, data) VALUES (?, ?)");
-    inserir.run(nome, dataAtual);
-
-    res.json({ mensagem: "Salvo no Banco de Dados SQL!" });
+        await pool.query("INSERT INTO visitas (nome, data) VALUES ($1, $2)", [nome, dataAtual]);
+        res.json({ mensagem: "Salvo na nuvem (PostgreSQL)!" });
+    } catch (err) {
+        res.status(500).json({ erro: "Erro ao salvar visita" });
+    }
 });
 
 // Rota PUT: Atualiza o nome de um visitante específico pelo ID
-app.put("/visita/:id", (req, res) => {
-    const { id } = req.params;
-    const { nome } = req.body;
+app.put("/visita/:id", async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { nome } = req.body;
 
-    const atualizar = db.prepare("UPDATE visitas SET nome = ? WHERE id = ?");
-    atualizar.run(nome, id);
-
-    res.json({ mensagem: "Registro atualizado!" });
+        await pool.query("UPDATE visitas SET nome = $1 WHERE id = $2", [nome, id]);
+        res.json({ mensagem: "Registro atualizado!" });
+    } catch (err) {
+        res.status(500).json({ erro: "Erro ao atualizar visita" });
+    }
 });
 
 // Rota DELETE: Apaga um visitante específico pelo ID
-app.delete("/visita/:id", (req, res) => {
-    const { id } = req.params;
-    const deletar = db.prepare("DELETE FROM visitas WHERE id = ?");
-    deletar.run(id);
-
-    res.json({ mensagem: "Registro removido!" });
+app.delete("/visita/:id", async (req, res) => {
+    try {
+        const { id } = req.params;
+        await pool.query("DELETE FROM visitas WHERE id = $1", [id]);
+        res.json({ mensagem: "Registro removido!" });
+    } catch (err) {
+        res.status(500).json({ erro: "Erro ao apagar visita" });
+    }
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`Servidor Express + Banco SQL rodando na porta ${PORT}!`);
+    console.log(`Servidor Express + PostgreSQL rodando na porta ${PORT}!`);
 });
