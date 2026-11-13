@@ -1,10 +1,19 @@
 const express = require("express");
 const cors = require("cors");
+const path = require("path");
 const Database = require("better-sqlite3");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// Faz o Express servir o index.html e arquivos estáticos da pasta raiz
+app.use(express.static(__dirname));
+
+// Garante que a página inicial '/' entregue o index.html
+app.get("/", (req, res) => {
+    res.sendFile(path.join(__dirname, "index.html"));
+});
 
 // Conecta ao banco de dados SQLite (cria o arquivo visitas.db sozinho)
 const db = new Database("visitas.db");
@@ -55,6 +64,7 @@ app.delete("/visita/:id", (req, res) => {
     res.json({ mensagem: "Registro removido!" });
 });
 
-app.listen(3000, () => {
-    console.log("Servidor Express + Banco SQL rodando na porta 3000!");
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Servidor Express + Banco SQL rodando na porta ${PORT}!`);
 });
